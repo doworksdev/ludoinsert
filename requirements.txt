@@ -1,3 +1,2 @@
 streamlit
-cadquery==2.5.2
-streamlit-3d-model==0.0.10
+
