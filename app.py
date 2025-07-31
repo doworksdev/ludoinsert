@@ -1,128 +1,149 @@
 import streamlit as st
-import cadquery as cq
-import plotly.graph_objects as go
-import numpy as np
-
-# --- Funções de Criação e Conversão ---
-
-def create_box_with_slot(length, width, height, add_slot, slot_x, slot_y, slot_z, slot_l, slot_w, slot_h):
-    """
-    Cria um modelo 3D de uma caixa com um slot opcional usando CadQuery.
-    """
-    # Cria a caixa principal centralizada na origem (0,0,0)
-    box = cq.Workplane("XY").box(length, width, height)
-
-    if add_slot:
-        # Cria o slot como uma caixa
-        slot_box = cq.Workplane("XY").box(slot_l, slot_w, slot_h)
-
-        # Translada o slot para a posição correta, considerando que a caixa principal
-        # e o slot são criados com seus centros na origem por padrão.
-        # As coordenadas do slot_x, slot_y, slot_z são relativas ao canto da caixa no UI,
-        # então precisamos ajustar para o centro da caixa e do slot.
-        # Ex: Se slot_x é 0, o canto está no início, o centro do slot_l fica em slot_l/2.
-        # A caixa principal está centralizada, então seu canto está em -length/2.
-        # Posição central do slot = (slot_x + slot_l/2) - length/2
-        translated_slot = slot_box.translate((slot_x - length / 2 + slot_l / 2,
-                                                slot_y - width / 2 + slot_w / 2,
-                                                slot_z - height / 2 + slot_h / 2))
-
-        # Corta o slot da caixa principal
-        result = box.cut(translated_slot)
-    else:
-        result = box
-
-    return result
-
-def cadquery_to_plotly_mesh(cq_object):
-    """
-    Converte um objeto CadQuery em dados de malha (vertices, faces) para Plotly.
-    """
-    # Usa o método to_mesh() do CadQuery para obter vertices e faces.
-    # Esta função pode exigir a instalação de 'ocp_tessellate' para melhor tesselação,
-    # mas a instalação padrão do cadquery geralmente lida com isso.
-    mesh = cq_object.val().to_mesh()
-
-    # mesh.vertices é um array numpy de shape (N, 3) para as coordenadas (x, y, z)
-    # mesh.faces é um array numpy de shape (M, 3) para os índices dos vértices de cada triângulo (i, j, k)
-    x, y, z = mesh.vertices.T
-    i, j, k = mesh.faces.T
-
-    return x, y, z, i, j, k
+import textwrap # Para formatar o código gerado
 
 # --- Interface do Usuário com Streamlit ---
 st.set_page_config(layout="wide") # Opcional: para usar a largura total da tela
-st.title("📦 Gerador de Caixa com Slot Paramétrico (Visualização 3D)")
-st.write("Ajuste os parâmetros da caixa e do slot para visualizar o modelo 3D interativo.")
+st.title("🛠️ Designer Paramétrico de Inserts para Jogos de Tabuleiro (OpenSCAD)")
+st.write("Ajuste os parâmetros do seu insert e gere o código OpenSCAD (`.scad`) para criar o modelo 3D localmente.")
+
+st.warning("Atenção: A geração do modelo 3D é feita localmente no seu computador. Este aplicativo gera o código OpenSCAD para você.")
 
 # Seção de Parâmetros na barra lateral
-st.sidebar.header("Parâmetros da Caixa Principal")
-length = st.sidebar.slider("Comprimento da Caixa (mm)", 10, 200, 100, key="len_box")
-width = st.sidebar.slider("Largura da Caixa (mm)", 10, 200, 50, key="wid_box")
-height = st.sidebar.slider("Altura da Caixa (mm)", 10, 200, 25, key="hei_box")
+st.sidebar.header("Parâmetros do Insert")
+st.sidebar.subheader("Dimensões da Caixa Principal")
+length = st.sidebar.slider("Comprimento do Insert (mm)", 10, 300, 100, key="len_insert_scad")
+width = st.sidebar.slider("Largura do Insert (mm)", 10, 200, 50, key="wid_insert_scad")
+height = st.sidebar.slider("Altura do Insert (mm)", 5, 100, 25, key="hei_insert_scad")
+thickness = st.sidebar.slider("Espessura da Parede (mm)", 0.5, 5.0, 1.5, step=0.1, key="thick_insert_scad")
 
-# Seção de Parâmetros do Slot na barra lateral
-st.sidebar.header("Parâmetros do Slot (Corte)")
-add_slot = st.sidebar.checkbox("Adicionar Slot?", value=True)
+# Seção de Parâmetros do Slot (Exemplo de Corte)
+st.sidebar.subheader("Detalhes do Corte/Slot (Opcional)")
+add_slot = st.sidebar.checkbox("Adicionar Corte/Slot?", value=True, key="add_slot_scad")
 
-# Exibe os controles do slot apenas se o checkbox estiver marcado
+# Variáveis para garantir que os sliders do slot tenham limites válidos
+# Se o slot não for adicionado, esses valores não serão usados no código OpenSCAD final
+slot_length_default = length / 2
+slot_width_default = width / 2
+slot_height_default = height / 2
+
 if add_slot:
-    st.sidebar.subheader("Posição do Slot")
-    slot_x_pos = st.sidebar.slider("Posição X do Slot (mm)", 0.0, float(length), float(length)/4, step=1.0, key="sx_pos")
-    slot_y_pos = st.sidebar.slider("Posição Y do Slot (mm)", 0.0, float(width), float(width)/4, step=1.0, key="sy_pos")
-    slot_z_pos = st.sidebar.slider("Posição Z do Slot (mm)", 0.0, float(height), 0.0, step=1.0, key="sz_pos")
+    st.sidebar.subheader("Posição do Corte (Canto Inferior Frontal)")
+    slot_x_pos = st.sidebar.slider("Posição X do Corte (mm)", 0.0, float(length - slot_length_default), float(length)/4, step=1.0, key="sx_pos_scad")
+    slot_y_pos = st.sidebar.slider("Posição Y do Corte (mm)", 0.0, float(width - slot_width_default), float(width)/4, step=1.0, key="sy_pos_scad")
+    slot_z_pos = st.sidebar.slider("Posição Z do Corte (mm)", 0.0, float(height - slot_height_default), 0.0, step=1.0, key="sz_pos_scad") # Ajustado para não ir além da altura
 
-    st.sidebar.subheader("Dimensões do Slot")
-    slot_length = st.sidebar.slider("Comprimento do Slot (mm)", 1.0, float(length), float(length)/2, step=1.0, key="sl_len")
-    slot_width = st.sidebar.slider("Largura do Slot (mm)", 1.0, float(width), float(width)/2, step=1.0, key="sl_wid")
-    slot_height = st.sidebar.slider("Altura do Slot (mm)", 1.0, float(height), float(height)/2, step=1.0, key="sl_hei")
+    st.sidebar.subheader("Dimensões do Corte")
+    slot_length_val = st.sidebar.slider("Comprimento do Corte (mm)", 1.0, float(length), float(slot_length_default), step=1.0, key="sl_len_scad")
+    slot_width_val = st.sidebar.slider("Largura do Corte (mm)", 1.0, float(width), float(slot_width_default), step=1.0, key="sl_wid_scad")
+    slot_height_val = st.sidebar.slider("Altura do Corte (mm)", 1.0, float(height), float(slot_height_default), step=1.0, key="sl_hei_scad")
 else:
-    # Define valores padrão ou mínimos se o slot não for adicionado
-    # Esses valores não serão usados no cálculo do modelo se add_slot for False
+    # Valores dummy se o slot não for adicionado (não aparecerão no código gerado)
     slot_x_pos, slot_y_pos, slot_z_pos = 0, 0, 0
-    slot_length, slot_width, slot_height = 1, 1, 1
+    slot_length_val, slot_width_val, slot_height_val = 1, 1, 1
 
-# --- Geração e Visualização do Modelo 3D ---
+st.sidebar.markdown("---")
+st.sidebar.info("Ajuste os parâmetros na barra lateral e o código OpenSCAD será gerado abaixo.")
 
-# Cria o modelo 3D com base nos parâmetros do UI
-try:
-    model_cq = create_box_with_slot(length, width, height, add_slot,
-                                    slot_x_pos, slot_y_pos, slot_z_pos,
-                                    slot_length, slot_width, slot_height)
+# --- Geração do Código OpenSCAD ---
 
-    # Converte o modelo CadQuery para o formato do Plotly
-    x, y, z, i, j, k = cadquery_to_plotly_mesh(model_cq)
+# Declaração de variáveis OpenSCAD para melhor legibilidade no código gerado
+openscad_code = f"""
+// --- Parâmetros do Insert ---
+// As dimensões são em milímetros (mm)
+insert_length = {length};
+insert_width = {width};
+insert_height = {height};
+wall_thickness = {thickness};
 
-    # Cria a figura 3D com Plotly
-    fig = go.Figure(data=[go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k,
-                                    color='lightblue', opacity=0.75)])
+// --- Cálculo das dimensões internas para ocação ---
+inner_length = insert_length - (2 * wall_thickness);
+inner_width = insert_width - (2 * wall_thickness);
+inner_height = insert_height - wall_thickness; // Para deixar o topo aberto
 
-    # Configura o layout da cena 3D para manter a proporção correta
-    fig.update_layout(
-        scene_aspectmode='data', # Garante que as proporções X, Y, Z sejam respeitadas
-        scene=dict(
-            xaxis_title='Comprimento (mm)',
-            yaxis_title='Largura (mm)',
-            zaxis_title='Altura (mm)',
-            # Desativa a grade e eixos para uma visualização mais limpa, opcional
-            xaxis=dict(showgrid=False, showbackground=False, zeroline=False),
-            yaxis=dict(showgrid=False, showbackground=False, zeroline=False),
-            zaxis=dict(showgrid=False, showbackground=False, zeroline=False),
-        ),
-        margin=dict(l=0, r=0, b=0, t=0), # Remove margens para maximizar o espaço
-        height=600 # Altura fixa do gráfico
+// Garante que as dimensões internas não sejam negativas
+inner_length = max(0.1, inner_length);
+inner_width = max(0.1, inner_width);
+inner_height = max(0.1, inner_height);
+
+// --- Módulo principal do Insert ---
+module create_hollow_box(len, wid, hei, thick_val) {{
+    difference() {{
+        // Caixa externa
+        cube([len, wid, hei]);
+
+        // Caixa interna (para ocação), posicionada para deixar o topo aberto
+        translate([thick_val, thick_val, thick_val]) {{
+            cube([len - (2 * thick_val), wid - (2 * thick_val), hei - thick_val]);
+        }}
+    }}
+}}
+
+// --- Construção do Insert Principal ---
+insert_model = create_hollow_box(insert_length, insert_width, insert_height, wall_thickness);
+
+// --- Adicionar Corte/Slot (Opcional) ---
+"""
+
+if add_slot:
+    openscad_code += f"""
+// Parâmetros do Corte/Slot
+slot_pos_x = {slot_x_pos};
+slot_pos_y = {slot_y_pos};
+slot_pos_z = {slot_z_pos};
+slot_len = {slot_length_val};
+slot_wid = {slot_width_val};
+slot_hei = {slot_height_val};
+
+// Adiciona o corte ao modelo do insert
+insert_model = difference() {{
+    insert_model; // O modelo atual do insert
+    translate([slot_pos_x, slot_pos_y, slot_pos_z]) {{
+        cube([slot_len, slot_wid, slot_hei]);
+    }}
+}};
+"""
+
+openscad_code += f"""
+// --- Renderizar o Modelo Final ---
+insert_model;
+
+// Você pode exportar este modelo como STL no OpenSCAD:
+// File -> Export -> Export as STL...
+"""
+
+# Remove recuo extra para o código exibido e ajusta indentação
+# Use textwrap.dedent para remover o recuo inicial
+formatted_code = textwrap.dedent(openscad_code).strip()
+# Adicione um cabeçalho informativo com a data de geração
+from datetime import datetime
+generated_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+formatted_code = f"// Generated by Streamlit Insert Designer on {generated_date}\n\n" + formatted_code
+
+
+st.subheader("Seu Código OpenSCAD Gerado (.scad):")
+st.code(formatted_code, language="c") # Use 'c' ou 'text' para OpenSCAD, pois não há 'openscad' como idioma padrão
+
+# Botões para Copiar e Baixar
+col1, col2 = st.columns([0.1, 0.9])
+with col1:
+    st.button("Copiar Código", on_click=lambda: st.session_state.update(copy_code_scad=formatted_code), key="copy_btn_scad")
+    if 'copy_code_scad' in st.session_state:
+        st.code(st.session_state.copy_code_scad, language="c", show_copy_button=True)
+with col2:
+    st.download_button(
+        label="Baixar Script OpenSCAD",
+        data=formatted_code,
+        file_name="insert_design.scad",
+        mime="text/plain" # Tipo MIME para arquivos .scad
     )
 
-    # Exibe o gráfico Plotly no Streamlit
-    st.plotly_chart(fig, use_container_width=True)
+st.markdown("---")
+st.subheader("Como Usar o Código Gerado no OpenSCAD:")
+st.markdown("""
+1.  **Baixe o script** (`insert_design.scad`) ou **copie o código** acima.
+2.  Abra o arquivo `.scad` baixado (ou cole o código copiado) no seu software **OpenSCAD** instalado no computador.
+3.  No OpenSCAD, você verá uma visualização do seu insert.
+4.  Para obter o arquivo 3D para impressão, vá em `File > Export > Export as STL...` e salve o modelo.
+""")
 
-    st.subheader("Configurações Atuais:")
-    st.write(f"**Caixa Principal:** {length} x {width} x {height} mm")
-    if add_slot:
-        st.write(f"**Slot:** Posição ({slot_x_pos}, {slot_y_pos}, {slot_z_pos}) mm, Dimensões ({slot_length} x {slot_width} x {slot_height}) mm")
-    else:
-        st.write("**Slot:** Não adicionado.")
-
-except Exception as e:
-    st.error(f"Ocorreu um erro ao gerar o modelo 3D. Verifique os parâmetros. Erro: {e}")
-    st.info("Pode ser que a combinação de parâmetros esteja criando um modelo inválido ou muito complexo para ser renderizado.")
+st.info("Michel, este aplicativo age como seu 'designer' paramétrico online. O OpenSCAD no seu computador continua sendo a 'fábrica' para gerar o STL. Mas agora você tem uma interface web para criar seus designs de forma super fácil!")
