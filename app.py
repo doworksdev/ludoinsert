@@ -1,7 +1,9 @@
 import streamlit as st
 import textwrap # Para formatar o código gerado
 from datetime import datetime
-from streamlit_3d_viewer import st_3d_viewer # Importa o componente do visualizador 3D
+import plotly.graph_objects as go # Para visualização 3D com Plotly
+from stl import mesh # Para ler arquivos STL com numpy-stl
+import numpy as np # Para manipulação de arrays
 
 # --- Interface do Usuário com Streamlit ---
 st.set_page_config(layout="wide") # Opcional: para usar a largura total da tela
@@ -29,9 +31,10 @@ slot_height_default = height / 2
 
 if add_slot:
     st.sidebar.subheader("Posição do Corte (Canto Inferior Frontal)")
-    slot_x_pos = st.sidebar.slider("Posição X do Corte (mm)", 0.0, float(length - (slot_length_default if length - slot_length_default > 0 else 0)), float(length)/4, step=1.0, key="sx_pos_scad")
-    slot_y_pos = st.sidebar.slider("Posição Y do Corte (mm)", 0.0, float(width - (slot_width_default if width - slot_width_default > 0 else 0)), float(width)/4, step=1.0, key="sy_pos_scad")
-    slot_z_pos = st.sidebar.slider("Posição Z do Corte (mm)", 0.0, float(height - (slot_height_default if height - slot_height_default > 0 else 0)), 0.0, step=1.0, key="sz_pos_scad")
+    # Ajustes nos limites dos sliders para evitar valores negativos
+    slot_x_pos = st.sidebar.slider("Posição X do Corte (mm)", 0.0, float(length - slot_length_default), float(length)/4, step=1.0, key="sx_pos_scad")
+    slot_y_pos = st.sidebar.slider("Posição Y do Corte (mm)", 0.0, float(width - slot_width_default), float(width)/4, step=1.0, key="sy_pos_scad")
+    slot_z_pos = st.sidebar.slider("Posição Z do Corte (mm)", 0.0, float(height - slot_height_default), 0.0, step=1.0, key="sz_pos_scad")
 
     st.sidebar.subheader("Dimensões do Corte")
     slot_length_val = st.sidebar.slider("Comprimento do Corte (mm)", 1.0, float(length), float(slot_length_default), step=1.0, key="sl_len_scad")
@@ -142,27 +145,58 @@ st.markdown("""
 """)
 
 st.markdown("---")
-st.header("✨ Visualizador 3D de Modelos STL")
+st.header("✨ Visualizador 3D de Modelos STL (Powered by Plotly)")
 st.write("Faça o upload do seu arquivo STL (gerado pelo OpenSCAD localmente) para visualizá-lo aqui.")
 
 uploaded_file = st.file_uploader("Escolha um arquivo STL", type=["stl"])
 
 if uploaded_file is not None:
-    # Para usar o st_3d_viewer, precisamos do conteúdo do arquivo em bytes
-    stl_data = uploaded_file.read()
-
-    # Exibe o modelo 3D
     try:
-        st_3d_viewer(stl_data, height=500, width=800, 
-                     camera_position=(0, 0, 0), # Posição inicial da câmera (pode precisar de ajuste)
-                     background_color='#FFFFFF', # Cor de fundo (branco)
-                     object_color='#ADD8E6', # Cor do objeto (azul claro)
-                     key="stl_viewer")
+        # Lê o conteúdo do arquivo STL em memória
+        # A biblioteca numpy-stl precisa de um objeto tipo arquivo, então usamos BytesIO
+        import io
+        byte_stream = io.BytesIO(uploaded_file.getvalue())
+        
+        # Carrega a malha STL
+        your_mesh = mesh.Mesh.from_file(None, fh=byte_stream)
+
+        # Extrai os dados para Plotly
+        # Cada triângulo tem 3 vértices, cada vértice tem 3 coordenadas (x,y,z)
+        # Reshape the vectors to get a list of all unique vertices
+        x, y, z = your_mesh.vectors.reshape(-1, 3).T
+        
+        # Create indices for the faces (triangles)
+        # Each face is a set of 3 indices from the flattened list of vertices
+        i = np.arange(len(your_mesh.vectors) * 3).reshape(-1, 3)[:, 0]
+        j = np.arange(len(your_mesh.vectors) * 3).reshape(-1, 3)[:, 1]
+        k = np.arange(len(your_mesh.vectors) * 3).reshape(-1, 3)[:, 2]
+
+        # Cria a figura 3D com Plotly
+        fig = go.Figure(data=[go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k,
+                                        color='lightblue', opacity=0.8)])
+
+        # Configura o layout da cena 3D para manter a proporção correta
+        fig.update_layout(
+            scene_aspectmode='data', # Garante que as proporções X, Y, Z sejam respeitadas
+            scene=dict(
+                xaxis_title='X',
+                yaxis_title='Y',
+                zaxis_title='Z',
+                xaxis=dict(showgrid=False, showbackground=False, zeroline=False),
+                yaxis=dict(showgrid=False, showbackground=False, zeroline=False),
+                zaxis=dict(showgrid=False, showbackground=False, zeroline=False),
+            ),
+            margin=dict(l=0, r=0, b=0, t=0), # Remove margens para maximizar o espaço
+            height=600 # Altura fixa do gráfico
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
         st.success("Modelo STL carregado e visualizado com sucesso!")
         st.info("Você pode arrastar o mouse para rotacionar o modelo e usar a roda do scroll para zoom.")
+
     except Exception as e:
         st.error(f"Não foi possível visualizar o arquivo STL. Erro: {e}")
-        st.info("Por favor, verifique se o arquivo STL está bem formado.")
+        st.info("Por favor, verifique se o arquivo STL está bem formado ou tente novamente.")
 else:
     st.info("Faça o upload de um arquivo .stl para visualizar seu modelo 3D.")
 
