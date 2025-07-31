@@ -7,7 +7,7 @@ import numpy as np # Para manipulação de arrays
 
 # --- Interface do Usuário com Streamlit ---
 st.set_page_config(layout="wide") # Opcional: para usar a largura total da tela
-st.title("🛠️ Designer Paramétrico de Inserts para Jogos de Tabuleiro (OpenSCAD)")
+st.title("��️ Designer Paramétrico de Inserts para Jogos de Tabuleiro (OpenSCAD)")
 st.write("Ajuste os parâmetros do seu insert e gere o código OpenSCAD (`.scad`) para criar o modelo 3D localmente.")
 
 st.warning("Atenção: A geração do modelo 3D é feita localmente no seu computador. Este aplicativo gera o código OpenSCAD para você.")
@@ -85,14 +85,13 @@ base_shape_call = "create_hollow_box(insert_length, insert_width, insert_height,
 # Definição do cortador de slot (se ativado)
 slot_cutter_geometry_code = "" # Agora vamos gerar a geometria DIRETAMENTE
 if add_slot:
-    # Usando str.format() explicitamente para maior robustez na formatação
-    # Isso evita problemas com f-strings aninhadas ou interpretações ambíguas de chaves.
-    slot_cutter_geometry_code = textwrap.dedent("""
+    # Usando f-string diretamente, com escape {{ e }} para chaves literais do OpenSCAD
+    slot_cutter_geometry_code = textwrap.dedent(f"""
         // Geometria do cortador de slot
-        translate([{}, {}, {}]) {{
-            cube([{}, {}, {}]);
+        translate([{slot_x_pos}, {slot_y_pos}, {slot_z_pos}]) {{
+            cube([{slot_len}, {slot_wid}, {slot_hei}]);
         }}
-    """).format(slot_x_pos, slot_y_pos, slot_z_pos, slot_len, slot_wid, slot_hei)
+    """)
 
 # Monta a operação geométrica final de forma declarativa
 final_geometric_operation = ""
