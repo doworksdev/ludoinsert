@@ -39,9 +39,14 @@ if add_slot:
     max_y_pos = max(0.0, float(width - slot_width_for_range))
     max_z_pos = max(0.0, float(height - slot_height_for_range))
 
-    slot_x_pos = st.sidebar.slider("Posição X do Corte (mm)", 0.0, max_x_pos, float(length)/4, step=1.0, key="sx_pos_scad")
-    slot_y_pos = st.sidebar.slider("Posição Y do Corte (mm)", 0.0, max_y_pos, float(width)/4, step=1.0, key="sy_pos_scad")
-    slot_z_pos = st.sidebar.slider("Posição Z do Corte (mm)", 0.0, max_z_pos, 0.0, step=1.0, key="sz_pos_scad")
+    # Garante que o valor inicial do slider esteja dentro do novo limite
+    current_x = st.session_state.get("sx_pos_scad", float(length)/4)
+    current_y = st.session_state.get("sy_pos_scad", float(width)/4)
+    current_z = st.session_state.get("sz_pos_scad", 0.0)
+
+    slot_x_pos = st.sidebar.slider("Posição X do Corte (mm)", 0.0, max_x_pos, min(current_x, max_x_pos), step=1.0, key="sx_pos_scad")
+    slot_y_pos = st.sidebar.slider("Posição Y do Corte (mm)", 0.0, max_y_pos, min(current_y, max_y_pos), step=1.0, key="sy_pos_scad")
+    slot_z_pos = st.sidebar.slider("Posição Z do Corte (mm)", 0.0, max_z_pos, min(current_z, max_z_pos), step=1.0, key="sz_pos_scad")
 
     st.sidebar.subheader("Dimensões do Corte")
     slot_length_val = st.sidebar.slider("Comprimento do Corte (mm)", 1.0, float(length), float(slot_length_for_range), step=1.0, key="sl_len_scad")
@@ -80,25 +85,16 @@ module create_hollow_box(len, wid, hei, thick_val) {{
 base_shape_call = "create_hollow_box(insert_length, insert_width, insert_height, wall_thickness);"
 
 # Definição do cortador de slot (se ativado)
-slot_cutter_def = ""
-slot_cutter_geometry_call = ""
+slot_cutter_geometry_code = "" # Agora vamos gerar a geometria DIRETAMENTE
 if add_slot:
-    slot_cutter_def = f"""
-// Parâmetros do Corte/Slot
-slot_pos_x = {slot_x_pos};
-slot_pos_y = {slot_y_pos};
-slot_pos_z = {slot_z_pos};
-slot_len = {slot_length_val};
-slot_wid = {slot_width_val};
-slot_hei = {slot_height_val};
-
-// Geometria do cortador de slot
-// É um cubo transladado para a posição e dimensões definidas
-slot_cutter_geometry = translate([slot_pos_x, slot_pos_y, slot_pos_z]) {{
-    cube([slot_len, slot_wid, slot_hei]);
-}};
-"""
-    slot_cutter_geometry_call = "slot_cutter_geometry;" # Nome da geometria para ser usada na operação final
+    slot_cutter_geometry_code = f"""
+    // Geometria do cortador de slot
+    translate([{slot_x_pos}, {slot_y_pos}, {slot_z_pos}]) {{
+        cube([{slot_len}, {slot_wid}, {slot_hei}]);
+    }}
+    """
+    # Adicionamos uma vírgula antes do slot_cutter_geometry_code se ele existir,
+    # para separar do modelo base dentro do difference().
 
 # Monta a operação geométrica final de forma declarativa
 final_geometric_operation = ""
@@ -106,7 +102,7 @@ if add_slot:
     final_geometric_operation = f"""
 difference() {{
     {base_shape_call} // O modelo base
-    {slot_cutter_geometry_call} // O cortador de slot
+    {slot_cutter_geometry_code} // O cortador de slot inserido diretamente
 }}
 """
 else:
@@ -135,7 +131,13 @@ inner_height = max(0.1, inner_height);
 
 {hollow_box_module_def} 
 
-{slot_cutter_def} 
+// Parâmetros do Corte/Slot (declarados como variáveis, se necessário)
+{"slot_pos_x = " + str(slot_x_pos) + ";" if add_slot else ""}
+{"slot_pos_y = " + str(slot_y_pos) + ";" if add_slot else ""}
+{"slot_pos_z = " + str(slot_z_pos) + ";" if add_slot else ""}
+{"slot_len = " + str(slot_len) + ";" if add_slot else ""}
+{"slot_wid = " + str(slot_wid) + ";" if add_slot else ""}
+{"slot_hei = " + str(slot_hei) + ";" if add_slot else ""}
 
 // --- Renderizar o Modelo Final ---
 // O modelo é construído de forma declarativa aqui, usando as operações e módulos definidos.
