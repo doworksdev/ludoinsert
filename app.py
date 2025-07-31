@@ -7,7 +7,7 @@ import numpy as np # Para manipulação de arrays
 
 # --- Interface do Usuário com Streamlit ---
 st.set_page_config(layout="wide") # Opcional: para usar a largura total da tela
-st.title("🛠️ Designer Paramétrico de Inserts para Jogos de Tabuleiro (OpenSCAD)")
+st.title("��️ Designer Paramétrico de Inserts para Jogos de Tabuleiro (OpenSCAD)")
 st.write("Ajuste os parâmetros do seu insert e gere o código OpenSCAD (`.scad`) para criar o modelo 3D localmente.")
 
 st.warning("Atenção: A geração do modelo 3D é feita localmente no seu computador. Este aplicativo gera o código OpenSCAD para você.")
@@ -25,22 +25,30 @@ st.sidebar.subheader("Detalhes do Corte/Slot (Opcional)")
 add_slot = st.sidebar.checkbox("Adicionar Corte/Slot?", value=True, key="add_slot_scad")
 
 # Variáveis para garantir que os sliders do slot tenham limites válidos
-slot_length_default = length / 2
-slot_width_default = width / 2
-slot_height_default = height / 2
+# Estes valores são usados apenas para o range do slider, não para a geometria real do slot
+# O range ideal é 0 até (dimensão - dimensão_do_slot), então usamos defaults para cálculo do range.
+slot_length_for_range = length / 2
+slot_width_for_range = width / 2
+slot_height_for_range = height / 2
+
 
 if add_slot:
     st.sidebar.subheader("Posição do Corte (Canto Inferior Frontal)")
-    # Ajustes nos limites dos sliders para evitar valores negativos
-    slot_x_pos = st.sidebar.slider("Posição X do Corte (mm)", 0.0, float(length - slot_length_default), float(length)/4, step=1.0, key="sx_pos_scad")
-    slot_y_pos = st.sidebar.slider("Posição Y do Corte (mm)", 0.0, float(width - slot_width_default), float(width)/4, step=1.0, key="sy_pos_scad")
-    slot_z_pos = st.sidebar.slider("Posição Z do Corte (mm)", 0.0, float(height - slot_height_default), 0.0, step=1.0, key="sz_pos_scad")
+    # Calcula limites dos sliders para evitar que o slot saia da caixa
+    max_x_pos = max(0.0, float(length - slot_length_for_range))
+    max_y_pos = max(0.0, float(width - slot_width_for_range))
+    max_z_pos = max(0.0, float(height - slot_height_for_range))
+
+    slot_x_pos = st.sidebar.slider("Posição X do Corte (mm)", 0.0, max_x_pos, float(length)/4, step=1.0, key="sx_pos_scad")
+    slot_y_pos = st.sidebar.slider("Posição Y do Corte (mm)", 0.0, max_y_pos, float(width)/4, step=1.0, key="sy_pos_scad")
+    slot_z_pos = st.sidebar.slider("Posição Z do Corte (mm)", 0.0, max_z_pos, 0.0, step=1.0, key="sz_pos_scad")
 
     st.sidebar.subheader("Dimensões do Corte")
-    slot_length_val = st.sidebar.slider("Comprimento do Corte (mm)", 1.0, float(length), float(slot_length_default), step=1.0, key="sl_len_scad")
-    slot_width_val = st.sidebar.slider("Largura do Corte (mm)", 1.0, float(width), float(slot_width_default), step=1.0, key="sl_wid_scad")
-    slot_height_val = st.sidebar.slider("Altura do Corte (mm)", 1.0, float(height), float(slot_height_default), step=1.0, key="sl_hei_scad")
+    slot_length_val = st.sidebar.slider("Comprimento do Corte (mm)", 1.0, float(length), float(slot_length_for_range), step=1.0, key="sl_len_scad")
+    slot_width_val = st.sidebar.slider("Largura do Corte (mm)", 1.0, float(width), float(slot_width_for_range), step=1.0, key="sl_wid_scad")
+    slot_height_val = st.sidebar.slider("Altura do Corte (mm)", 1.0, float(height), float(slot_height_for_range), step=1.0, key="sl_hei_scad")
 else:
+    # Valores dummy se o slot não for adicionado (não aparecerão no código gerado)
     slot_x_pos, slot_y_pos, slot_z_pos = 0, 0, 0
     slot_length_val, slot_width_val, slot_height_val = 1, 1, 1
 
@@ -50,6 +58,61 @@ st.sidebar.info("Ajuste os parâmetros na barra lateral para gerar o código Ope
 # --- Geração do Código OpenSCAD ---
 
 generated_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+# Definição do módulo da caixa oca
+hollow_box_module_def = f"""
+// --- Módulo principal do Insert (Caixa Oca) ---
+module create_hollow_box(len, wid, hei, thick_val) {{
+    difference() {{
+        // Caixa externa
+        cube([len, wid, hei]);
+
+        // Caixa interna (buraco), posicionada para deixar fundo e paredes com espessura 'thick_val', e topo aberto.
+        // A altura da caixa interna é maior que a externa para garantir o corte total do topo.
+        translate([thick_val, thick_val, thick_val]) {{
+            cube([len - (2 * thick_val), wid - (2 * thick_val), hei * 2]); // 'hei * 2' garante que o topo seja cortado completamente
+        }}
+    }}
+}}
+"""
+
+# Chamada do módulo da caixa oca para o modelo base
+base_shape_call = "create_hollow_box(insert_length, insert_width, insert_height, wall_thickness);"
+
+# Definição do cortador de slot (se ativado)
+slot_cutter_def = ""
+slot_cutter_geometry_call = ""
+if add_slot:
+    slot_cutter_def = f"""
+// Parâmetros do Corte/Slot
+slot_pos_x = {slot_x_pos};
+slot_pos_y = {slot_y_pos};
+slot_pos_z = {slot_z_pos};
+slot_len = {slot_length_val};
+slot_wid = {slot_width_val};
+slot_hei = {slot_height_val};
+
+// Geometria do cortador de slot
+// É um cubo transladado para a posição e dimensões definidas
+slot_cutter_geometry = translate([slot_pos_x, slot_pos_y, slot_pos_z]) {{
+    cube([slot_len, slot_wid, slot_hei]);
+}};
+"""
+    slot_cutter_geometry_call = "slot_cutter_geometry;" # Nome da geometria para ser usada na operação final
+
+# Monta a operação geométrica final de forma declarativa
+final_geometric_operation = ""
+if add_slot:
+    final_geometric_operation = f"""
+difference() {{
+    {base_shape_call} // O modelo base
+    {slot_cutter_geometry_call} // O cortador de slot
+}}
+"""
+else:
+    final_geometric_operation = base_shape_call # Apenas o modelo base se não houver slot
+
+# Assemble the full OpenSCAD code string
 openscad_code = f"""
 // Generated by Streamlit Insert Designer on {generated_date}
 
@@ -60,57 +123,23 @@ insert_width = {width};
 insert_height = {height};
 wall_thickness = {thickness};
 
-// --- Cálculo das dimensões internas para ocação ---
+// --- Cálculo das dimensões internas para ocação (apenas para referência, não usado diretamente no módulo) ---
 inner_length = insert_length - (2 * wall_thickness);
 inner_width = insert_width - (2 * wall_thickness);
-inner_height = insert_height - wall_thickness; // Para deixar o topo aberto
+inner_height = insert_height - wall_thickness; 
 
-// Garante que as dimensões internas não sejam negativas
+// Garante que as dimensões internas não sejam negativas (apenas para referência)
 inner_length = max(0.1, inner_length);
 inner_width = max(0.1, inner_width);
 inner_height = max(0.1, inner_height);
 
-// --- Módulo principal do Insert ---
-module create_hollow_box(len, wid, hei, thick_val) {{
-    difference() {{
-        // Caixa externa
-        cube([len, wid, hei]);
+{hollow_box_module_def} 
 
-        // Caixa interna (para ocação), posicionada para deixar o topo aberto
-        translate([thick_val, thick_val, thick_val]) {{
-            cube([len - (2 * thick_val), wid - (2 * thick_val), hei - thick_val]);
-        }}
-    }}
-}}
+{slot_cutter_def} 
 
-// --- Construção do Insert Principal ---
-insert_model = create_hollow_box(insert_length, insert_width, insert_height, wall_thickness);
-
-// --- Adicionar Corte/Slot (Opcional) ---
-"""
-
-if add_slot:
-    openscad_code += f"""
-// Parâmetros do Corte/Slot
-slot_pos_x = {slot_x_pos};
-slot_pos_y = {slot_y_pos};
-slot_pos_z = {slot_z_pos};
-slot_len = {slot_length_val};
-slot_wid = {slot_width_val};
-slot_hei = {slot_height_val};
-
-// Adiciona o corte ao modelo do insert
-insert_model = difference() {{
-    insert_model; // O modelo atual do insert
-    translate([slot_pos_x, slot_pos_y, slot_pos_z]) {{
-        cube([slot_len, slot_wid, slot_hei]);
-    }}
-}};
-"""
-
-openscad_code += f"""
 // --- Renderizar o Modelo Final ---
-insert_model;
+// O modelo é construído de forma declarativa aqui, usando as operações e módulos definidos.
+{final_geometric_operation}
 
 // Você pode exportar este modelo como STL no OpenSCAD:
 // File -> Export -> Export as STL...
@@ -153,7 +182,6 @@ uploaded_file = st.file_uploader("Escolha um arquivo STL", type=["stl"])
 if uploaded_file is not None:
     try:
         # Lê o conteúdo do arquivo STL em memória
-        # A biblioteca numpy-stl precisa de um objeto tipo arquivo, então usamos BytesIO
         import io
         byte_stream = io.BytesIO(uploaded_file.getvalue())
         
@@ -167,6 +195,7 @@ if uploaded_file is not None:
         
         # Create indices for the faces (triangles)
         # Each face is a set of 3 indices from the flattened list of vertices
+        # This assumes a sequential indexing for the flattened vertices
         i = np.arange(len(your_mesh.vectors) * 3).reshape(-1, 3)[:, 0]
         j = np.arange(len(your_mesh.vectors) * 3).reshape(-1, 3)[:, 1]
         k = np.arange(len(your_mesh.vectors) * 3).reshape(-1, 3)[:, 2]
