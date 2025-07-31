@@ -7,7 +7,7 @@ import numpy as np # Para manipulação de arrays
 
 # --- Interface do Usuário com Streamlit ---
 st.set_page_config(layout="wide") # Opcional: para usar a largura total da tela
-st.title("��️ Designer Paramétrico de Inserts para Jogos de Tabuleiro (OpenSCAD)")
+st.title("🛠️ Designer Paramétrico de Inserts para Jogos de Tabuleiro (OpenSCAD)")
 st.write("Ajuste os parâmetros do seu insert e gere o código OpenSCAD (`.scad`) para criar o modelo 3D localmente.")
 
 st.warning("Atenção: A geração do modelo 3D é feita localmente no seu computador. Este aplicativo gera o código OpenSCAD para você.")
@@ -25,8 +25,6 @@ st.sidebar.subheader("Detalhes do Corte/Slot (Opcional)")
 add_slot = st.sidebar.checkbox("Adicionar Corte/Slot?", value=True, key="add_slot_scad")
 
 # Variáveis para garantir que os sliders do slot tenham limites válidos
-# Estes valores são usados apenas para o range do slider, não para a geometria real do slot
-# O range ideal é 0 até (dimensão - dimensão_do_slot), então usamos defaults para cálculo do range.
 slot_length_for_range = length / 2
 slot_width_for_range = width / 2
 slot_height_for_range = height / 2
@@ -87,14 +85,14 @@ base_shape_call = "create_hollow_box(insert_length, insert_width, insert_height,
 # Definição do cortador de slot (se ativado)
 slot_cutter_geometry_code = "" # Agora vamos gerar a geometria DIRETAMENTE
 if add_slot:
-    slot_cutter_geometry_code = f"""
-    // Geometria do cortador de slot
-    translate([{slot_x_pos}, {slot_y_pos}, {slot_z_pos}]) {{
-        cube([{slot_len}, {slot_wid}, {slot_hei}]);
-    }}
-    """
-    # Adicionamos uma vírgula antes do slot_cutter_geometry_code se ele existir,
-    # para separar do modelo base dentro do difference().
+    # Usando str.format() explicitamente para maior robustez na formatação
+    # Isso evita problemas com f-strings aninhadas ou interpretações ambíguas de chaves.
+    slot_cutter_geometry_code = textwrap.dedent("""
+        // Geometria do cortador de slot
+        translate([{}, {}, {}]) {{
+            cube([{}, {}, {}]);
+        }}
+    """).format(slot_x_pos, slot_y_pos, slot_z_pos, slot_len, slot_wid, slot_hei)
 
 # Monta a operação geométrica final de forma declarativa
 final_geometric_operation = ""
